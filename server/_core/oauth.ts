@@ -62,11 +62,12 @@ function buildUserResponse(
 }
 
 export function registerOAuthRoutes(app: Express) {
+  const googleCallbackUri = "https://geocontacts-dn1j.onrender.com/api/oauth/google/callback";
+
   app.get("/app-auth", (req: Request, res: Response) => {
     const redirectUri = getQueryParam(req, "redirectUri");
     const state = getQueryParam(req, "state");
     const clientId = process.env.GOOGLE_CLIENT_ID;
-    const callbackUri = process.env.GOOGLE_CALLBACK_URL || `${req.protocol}://${req.get("host")}/api/oauth/google/callback`;
 
     if (!redirectUri || !state) {
       res.status(400).json({ error: "redirectUri and state are required" });
@@ -79,7 +80,7 @@ export function registerOAuthRoutes(app: Express) {
 
     const googleUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     googleUrl.searchParams.set("client_id", clientId);
-    googleUrl.searchParams.set("redirect_uri", callbackUri);
+    googleUrl.searchParams.set("redirect_uri", googleCallbackUri);
     googleUrl.searchParams.set("response_type", "code");
     googleUrl.searchParams.set("scope", "openid email profile");
     googleUrl.searchParams.set("state", state);
@@ -92,7 +93,6 @@ export function registerOAuthRoutes(app: Express) {
     const state = getQueryParam(req, "state");
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const callbackUri = process.env.GOOGLE_CALLBACK_URL || `${req.protocol}://${req.get("host")}/api/oauth/google/callback`;
 
     if (!code || !state) {
       res.status(400).json({ error: "code and state are required" });
@@ -107,7 +107,7 @@ export function registerOAuthRoutes(app: Express) {
       const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: callbackUri, grant_type: "authorization_code" }),
+        body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: googleCallbackUri, grant_type: "authorization_code" }),
       });
       if (!tokenResponse.ok) throw new Error(`Google token exchange failed: ${tokenResponse.status}`);
       const tokens = (await tokenResponse.json()) as { access_token?: string };
