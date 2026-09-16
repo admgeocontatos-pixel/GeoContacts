@@ -62,6 +62,75 @@ function buildUserResponse(
 }
 
 export function registerOAuthRoutes(app: Express) {
+  app.get("/app-auth", (req: Request, res: Response) => {
+    const redirectUri = getQueryParam(req, "redirectUri");
+    const state = getQueryParam(req, "state");
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const callbackUri = process.env.GOOGLE_CALLBACK_URL || `${req.protocol}://${req.get("host")}/api/oauth/google/callback`;
+
+    if (!redirectUri || !state) {
+      res.status(400).json({ error: "redirectUri and state are required" });
+      return;
+    }
+    if (!clientId) {
+      res.status(503).json({ error: "Google OAuth is not configured on the server" });
+      return;
+    }
+
+    const googleUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    googleUrl.searchParams.set("client_id", clientId);
+    googleUrl.searchParams.set("redirect_uri", callbackUri);
+    googleUrl.searchParams.set("response_type", "code");
+    googleUrl.searchParams.set("scope", "openid email profile");
+    googleUrl.searchParams.set("state", state);
+    googleUrl.searchParams.set("access_type", "offline");
+    res.redirect(302, googleUrl.toString());
+  });
+
+  app.get("/api/oauth/google/callback", async (req: Request, res: Response) => {
+    const code = getQueryParam(req, "code");
+    const state = getQueryParam(req, "state");
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const callbackUri = process.env.GOOGLE_CALLBACK_URL || `${req.protocol}://${req.get("host")}/api/oauth/google/callback`;
+
+    if (!code || !state) {
+      res.status(400).json({ error: "code and state are required" });
+      return;
+    }
+    if (!clientId || !clientSecret) {
+      res.status(503).json({ error: "Google OAuth server credentials are not configured" });
+      return;
+    }
+
+    try {
+      const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: callbackUri, grant_type: "authorization_code" }),
+      });
+      if (!tokenResponse.ok) throw new Error(`Google token exchange failed: ${tokenResponse.status}`);
+      const tokens = (await tokenResponse.json()) as { access_token?: string };
+      if (!tokens.access_token) throw new Error("Google did not return an access token");
+
+      const profileResponse = await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+      if (!profileResponse.ok) throw new Error(`Google profile request failed: ${profileResponse.status}`);
+      const profile = (await profileResponse.json()) as { sub?: string; name?: string; email?: string };
+      if (!profile.sub) throw new Error("Google profile did not contain a subject");
+
+      const user = await syncUser({ openId: `google:${profile.sub}`, name: profile.name, email: profile.email, loginMethod: "google" });
+      const sessionToken = await sdk.createSessionToken(`google:${profile.sub}`, { name: user.name || profile.name || "", expiresInMs: ONE_YEAR_MS });
+      const mobileRedirect = Buffer.from(state, "base64").toString("utf8");
+      const callbackUrl = new URL(mobileRedirect);
+      callbackUrl.searchParams.set("sessionToken", sessionToken);
+      callbackUrl.searchParams.set("user", Buffer.from(JSON.stringify(buildUserResponse(user))).toString("base64"));
+      res.redirect(302, callbackUrl.toString());
+    } catch (error) {
+      console.error("[Google OAuth] Callback failed", error);
+      res.status(500).json({ error: "Google OAuth callback failed" });
+    }
+  });
+
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");
