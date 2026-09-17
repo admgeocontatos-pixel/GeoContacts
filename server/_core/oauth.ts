@@ -76,7 +76,7 @@ function verifyPassword(password: string, stored: string) {
 }
 
 export function registerOAuthRoutes(app: Express) {
-  const googleCallbackUri = "https://geocontacts-dn1j.onrender.com/api/oauth/google/callback";
+  const googleCallbackUri = "https://geocontacts-dn1j.onrender.com/api/auth/google/callback";
 
   app.get("/app-auth", (req: Request, res: Response) => {
     const redirectUri = getQueryParam(req, "redirectUri");
@@ -102,7 +102,7 @@ export function registerOAuthRoutes(app: Express) {
     res.redirect(302, googleUrl.toString());
   });
 
-  app.get("/api/oauth/google/callback", async (req: Request, res: Response) => {
+  app.get(["/api/auth/google/callback", "/api/oauth/google/callback"], async (req: Request, res: Response) => {
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");
     const clientId = process.env.GOOGLE_CLIENT_ID;
