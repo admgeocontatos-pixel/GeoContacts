@@ -8,12 +8,12 @@ const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
 const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
-  portal: process.env.EXPO_PUBLIC_OAUTH_PORTAL_URL ?? "",
+  portal: process.env.EXPO_PUBLIC_OAUTH_PORTAL_URL ?? "https://geocontacts-dn1j.onrender.com",
   server: process.env.EXPO_PUBLIC_OAUTH_SERVER_URL ?? "",
-  appId: process.env.EXPO_PUBLIC_APP_ID ?? "",
+  appId: process.env.EXPO_PUBLIC_APP_ID ?? "geocontacts",
   ownerId: process.env.EXPO_PUBLIC_OWNER_OPEN_ID ?? "",
   ownerName: process.env.EXPO_PUBLIC_OWNER_NAME ?? "",
-  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "",
+  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://geocontacts-dn1j.onrender.com",
   deepLinkScheme: schemeFromBundleId,
 };
 

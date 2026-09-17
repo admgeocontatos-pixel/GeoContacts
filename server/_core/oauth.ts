@@ -1,8 +1,9 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "../../shared/const.js";
 import type { Express, Request, Response } from "express";
-import { getUserByOpenId, upsertUser } from "../db";
+import { createEmailUser, getUserByEmail, getUserByOpenId, upsertUser } from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
@@ -59,6 +60,19 @@ function buildUserResponse(
     loginMethod: user?.loginMethod ?? null,
     lastSignedIn: (user?.lastSignedIn ?? new Date()).toISOString(),
   };
+}
+
+function hashPassword(password: string) {
+  const salt = randomBytes(16).toString("hex");
+  return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+function verifyPassword(password: string, stored: string) {
+  const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const actual = scryptSync(password, salt, 64);
+  const expected = Buffer.from(hash, "hex");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 export function registerOAuthRoutes(app: Express) {
@@ -201,6 +215,47 @@ export function registerOAuthRoutes(app: Express) {
     const cookieOptions = getSessionCookieOptions(req);
     res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
     res.json({ success: true });
+  });
+
+  app.post("/api/auth/email/register", async (req: Request, res: Response) => {
+    try {
+      const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const name = typeof req.body?.name === "string" ? req.body.name.trim() : undefined;
+      if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 8) {
+        res.status(400).json({ error: "Informe um e-mail válido e uma senha com pelo menos 8 caracteres" });
+        return;
+      }
+      if (await getUserByEmail(email)) {
+        res.status(409).json({ error: "Este e-mail já está cadastrado" });
+        return;
+      }
+      const user = await createEmailUser({ email, name, passwordHash: hashPassword(password) });
+      if (!user) throw new Error("User was not created");
+      const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || "", expiresInMs: ONE_YEAR_MS });
+      res.json({ sessionToken, user: buildUserResponse(user) });
+    } catch (error) {
+      console.error("[Auth] Email registration failed", error);
+      res.status(500).json({ error: "Não foi possível criar a conta" });
+    }
+  });
+
+  app.post("/api/auth/email/login", async (req: Request, res: Response) => {
+    try {
+      const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const user = await getUserByEmail(email);
+      if (!user?.passwordHash || !verifyPassword(password, user.passwordHash)) {
+        res.status(401).json({ error: "E-mail ou senha inválidos" });
+        return;
+      }
+      await upsertUser({ openId: user.openId, lastSignedIn: new Date() });
+      const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || "", expiresInMs: ONE_YEAR_MS });
+      res.json({ sessionToken, user: buildUserResponse(user) });
+    } catch (error) {
+      console.error("[Auth] Email login failed", error);
+      res.status(500).json({ error: "Não foi possível realizar o login" });
+    }
   });
 
   // Get current authenticated user - works with both cookie (web) and Bearer token (mobile)
