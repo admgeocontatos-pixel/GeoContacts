@@ -58,6 +58,12 @@ export async function upsertUserLocation(location: InsertUserLocation): Promise<
     target: userLocations.userId,
     set: { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy ?? null, updatedAt: new Date() },
   });
+  await db.update(users).set({
+    latitude: location.latitude,
+    longitude: location.longitude,
+    lastLocationUpdate: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(users.id, location.userId));
 }
 
 export async function getNearbyUsers(userId: number, latitude: number, longitude: number, radiusKm: number) {

@@ -13,6 +13,9 @@ export const users = pgTable("users", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  lastLocationUpdate: timestamp("lastLocationUpdate", { withTimezone: true }),
 });
 
 export type User = typeof users.$inferSelect;

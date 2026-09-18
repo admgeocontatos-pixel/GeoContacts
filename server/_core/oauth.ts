@@ -1,6 +1,6 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "../../shared/const.js";
 import type { Express, Request, Response } from "express";
-import { createEmailUser, getUserByEmail, getUserByOpenId, upsertUser } from "../db";
+import { createEmailUser, getNearbyUsers, getUserByEmail, getUserByOpenId, upsertUser, upsertUserLocation } from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
@@ -77,6 +77,46 @@ function verifyPassword(password: string, stored: string) {
 
 export function registerOAuthRoutes(app: Express) {
   const googleCallbackUri = "https://geocontacts-dn1j.onrender.com/api/auth/google/callback";
+
+  app.put("/api/user/location", async (req: Request, res: Response) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      const latitude = Number(req.body?.latitude);
+      const longitude = Number(req.body?.longitude);
+      const accuracy = req.body?.accuracy === undefined ? undefined : Number(req.body.accuracy);
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        res.status(400).json({ error: "latitude e longitude devem ser coordenadas válidas" });
+        return;
+      }
+      if (accuracy !== undefined && (!Number.isFinite(accuracy) || accuracy < 0)) {
+        res.status(400).json({ error: "accuracy deve ser um número não negativo" });
+        return;
+      }
+      await upsertUserLocation({ userId: user.id, latitude, longitude, accuracy });
+      res.json({ success: true, latitude, longitude, updatedAt: new Date().toISOString() });
+    } catch (error) {
+      console.error("[Location] Update failed", error);
+      res.status(401).json({ error: "Não foi possível atualizar a localização" });
+    }
+  });
+
+  app.get("/api/contacts/nearby", async (req: Request, res: Response) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      const latitude = Number(getQueryParam(req, "latitude"));
+      const longitude = Number(getQueryParam(req, "longitude"));
+      const radiusKm = Number(getQueryParam(req, "radiusKm") ?? "10");
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180 || !Number.isFinite(radiusKm) || radiusKm <= 0 || radiusKm > 100) {
+        res.status(400).json({ error: "latitude, longitude e radiusKm inválidos" });
+        return;
+      }
+      const contacts = await getNearbyUsers(user.id, latitude, longitude, radiusKm);
+      res.json({ contacts });
+    } catch (error) {
+      console.error("[Location] Nearby lookup failed", error);
+      res.status(401).json({ error: "Não foi possível consultar contatos próximos" });
+    }
+  });
 
   app.get("/app-auth", (req: Request, res: Response) => {
     const redirectUri = getQueryParam(req, "redirectUri");

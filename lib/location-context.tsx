@@ -54,16 +54,27 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       setError('A localização GPS está disponível no Android e iOS.');
       return currentLocation;
     }
-    const permission = await Location.requestForegroundPermissionsAsync();
-    setPermissionStatus(permission.status);
-    if (permission.status !== Location.PermissionStatus.GRANTED) {
-      setError('Permissão de localização negada. Ative-a nas configurações do Android.');
-      return null;
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      setPermissionStatus(permission.status);
+      if (permission.status !== Location.PermissionStatus.GRANTED) {
+        setError('Permissão de localização negada. Ative-a nas configurações do Android.');
+        return currentLocation;
+      }
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        setError('O GPS está desativado. Ative a localização do celular e tente novamente.');
+        return currentLocation;
+      }
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coordinates = toCoordinates(location);
+      await updateLocation(coordinates);
+      return coordinates;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Não foi possível obter o GPS. Verifique o sinal e tente novamente.';
+      setError(message);
+      return currentLocation;
     }
-    const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    const coordinates = toCoordinates(location);
-    await updateLocation(coordinates);
-    return coordinates;
   }, [currentLocation, updateLocation]);
 
   useEffect(() => {
@@ -109,8 +120,13 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   const setTrackingEnabled = useCallback(async (enabled: boolean) => {
     setTrackingEnabledState(enabled);
     await AsyncStorage.setItem('locationTrackingEnabled', JSON.stringify(enabled));
-    if (enabled) await refreshLocation();
-    else subscription.current?.remove();
+    if (enabled) {
+      try {
+        await refreshLocation();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Não foi possível ativar o rastreamento.');
+      }
+    } else subscription.current?.remove();
   }, [refreshLocation]);
 
   return (
