@@ -1,5 +1,6 @@
 import * as Api from "@/lib/_core/api";
 import * as Auth from "@/lib/_core/auth";
+import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Platform } from "react-native";
 
@@ -91,6 +92,9 @@ export function useAuth(options?: UseAuthOptions) {
       await Auth.clearUserInfo();
       setUser(null);
       setError(null);
+      // Replace the protected route so the user cannot return to the tabs
+      // with the back button after the local session has been removed.
+      router.replace("/login");
     }
   }, []);
 
