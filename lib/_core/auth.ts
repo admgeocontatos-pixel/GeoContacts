@@ -44,6 +44,8 @@ export async function setSessionToken(token: string): Promise<void> {
     // Use SecureStore for native
     console.log("[Auth] Setting session token...", token.substring(0, 20) + "...");
     await SecureStore.setItemAsync(SESSION_TOKEN_KEY, token);
+    const storedToken = await SecureStore.getItemAsync(SESSION_TOKEN_KEY);
+    if (storedToken !== token) throw new Error("SESSION_TOKEN_PERSISTENCE_FAILED");
     console.log("[Auth] Session token stored in SecureStore successfully");
   } catch (error) {
     console.error("[Auth] Failed to set session token:", error);
@@ -107,9 +109,12 @@ export async function setUserInfo(user: User): Promise<void> {
 
     // Use SecureStore for native
     await SecureStore.setItemAsync(USER_INFO_KEY, JSON.stringify(user));
+    const storedInfo = await SecureStore.getItemAsync(USER_INFO_KEY);
+    if (storedInfo !== JSON.stringify(user)) throw new Error("USER_INFO_PERSISTENCE_FAILED");
     console.log("[Auth] User info stored in SecureStore successfully");
   } catch (error) {
     console.error("[Auth] Failed to set user info:", error);
+    throw error;
   }
 }
 

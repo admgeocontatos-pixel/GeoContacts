@@ -99,6 +99,17 @@ export function useAuth(options?: UseAuthOptions) {
     }
   }, []);
 
+  const signIn = useCallback(async (sessionToken: string, userInfo: Auth.User) => {
+    if (!sessionToken) throw new Error("SESSION_TOKEN_MISSING");
+    await Auth.setSessionToken(sessionToken);
+    await Auth.setUserInfo(userInfo);
+    const [storedToken, storedUser] = await Promise.all([Auth.getSessionToken(), Auth.getUserInfo()]);
+    if (storedToken !== sessionToken || !storedUser) throw new Error("SESSION_PERSISTENCE_FAILED");
+    setUser(storedUser);
+    setError(null);
+    setLoading(false);
+  }, []);
+
   const isAuthenticated = useMemo(() => Boolean(user), [user]);
 
   useEffect(() => {
@@ -146,6 +157,7 @@ export function useAuth(options?: UseAuthOptions) {
     error,
     isAuthenticated,
     refresh: fetchUser,
+    signIn,
     logout,
   };
 }

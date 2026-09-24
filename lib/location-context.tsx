@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import type { LocationCoordinates } from '@/shared/types';
-import { createTRPCClient } from '@/lib/trpc';
+import { apiCall } from '@/lib/_core/api';
 
 interface LocationContextType {
   currentLocation: LocationCoordinates | null;
@@ -34,14 +34,15 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   const [permissionStatus, setPermissionStatus] = useState<Location.PermissionStatus | 'unavailable' | null>(null);
   const [trackingEnabled, setTrackingEnabledState] = useState(true);
   const subscription = useRef<Location.LocationSubscription | null>(null);
-  const apiClient = useRef<ReturnType<typeof createTRPCClient> | null>(null);
+  const pendingLocation = useRef<LocationCoordinates | null>(null);
 
   const updateLocation = useCallback(async (location: LocationCoordinates) => {
     setCurrentLocation(location);
+    pendingLocation.current = location;
     await AsyncStorage.setItem('lastLocation', JSON.stringify(location));
     try {
-      apiClient.current ??= createTRPCClient();
-      await apiClient.current.location.update.mutate(location);
+      await apiCall('/api/user/location', { method: 'PUT', body: JSON.stringify(location) });
+      pendingLocation.current = null;
     } catch {
       // Usuários deslogados ainda podem usar o GPS local; a posição será publicada após o login.
     }

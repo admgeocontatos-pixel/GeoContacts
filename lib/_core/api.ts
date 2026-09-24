@@ -136,6 +136,13 @@ export async function logout(): Promise<void> {
   });
 }
 
+export async function requestPasswordReset(email: string): Promise<{ message: string }> {
+  return apiCall<{ message: string }>("/api/auth/password/forgot", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim().toLowerCase() }),
+  });
+}
+
 // Get current authenticated user (web uses cookie-based auth)
 export async function getMe(): Promise<{
   id: number;

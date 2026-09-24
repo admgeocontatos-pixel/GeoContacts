@@ -299,6 +299,18 @@ export function registerOAuthRoutes(app: Express) {
     }
   });
 
+  app.post("/api/auth/password/forgot", async (req: Request, res: Response) => {
+    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      res.status(400).json({ error: "INVALID_INPUT", message: "Informe um e-mail válido" });
+      return;
+    }
+    // The MVP does not yet have a transactional e-mail provider. Always return
+    // the same response so the endpoint cannot reveal whether an account exists.
+    console.info("[Auth] Password reset requested", { emailDomain: email.split("@")[1] });
+    res.json({ message: "Se o e-mail estiver cadastrado, você receberá instruções para redefinir a senha." });
+  });
+
   // Get current authenticated user - works with both cookie (web) and Bearer token (mobile)
   app.get("/api/auth/me", async (req: Request, res: Response) => {
     try {

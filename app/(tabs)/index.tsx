@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { ScreenContainer } from '@/components/screen-container';
 import { NearbyContactCard } from '@/components/nearby-contact-card';
@@ -19,10 +19,22 @@ export default function HomeScreen() {
   const [selectedRadius, setSelectedRadius] = useState(5);
   const [nearbyContacts, setNearbyContacts] = useState<NearbyContact[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const gpsRequested = useRef(false);
   const nearbyQuery = trpc.location.nearby.useQuery(
     { latitude: currentLocation?.latitude ?? 0, longitude: currentLocation?.longitude ?? 0, radiusKm: selectedRadius },
     { enabled: isAuthenticated && !authLoading && !!currentLocation, staleTime: 30_000 },
   );
+
+  useEffect(() => {
+    if (!isAuthenticated || authLoading) {
+      gpsRequested.current = false;
+      return;
+    }
+    if (!gpsRequested.current) {
+      gpsRequested.current = true;
+      void refreshLocation();
+    }
+  }, [isAuthenticated, authLoading, refreshLocation]);
 
   const loadNearby = useCallback(async () => {
     await refreshLocation();
