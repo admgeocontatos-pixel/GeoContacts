@@ -263,11 +263,11 @@ export function registerOAuthRoutes(app: Express) {
       const password = typeof req.body?.password === "string" ? req.body.password : "";
       const name = typeof req.body?.name === "string" ? req.body.name.trim() : undefined;
       if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 8) {
-        res.status(400).json({ error: "Informe um e-mail válido e uma senha com pelo menos 8 caracteres" });
+        res.status(400).json({ error: "INVALID_INPUT", message: "Informe um e-mail válido e uma senha com pelo menos 8 caracteres" });
         return;
       }
       if (await getUserByEmail(email)) {
-        res.status(409).json({ error: "Este e-mail já está cadastrado" });
+        res.status(409).json({ error: "EMAIL_EXISTS", message: "Este e-mail já está cadastrado" });
         return;
       }
       const user = await createEmailUser({ email, name, passwordHash: hashPassword(password) });
@@ -276,7 +276,8 @@ export function registerOAuthRoutes(app: Express) {
       res.json({ sessionToken, user: buildUserResponse(user) });
     } catch (error) {
       console.error("[Auth] Email registration failed", error);
-      res.status(500).json({ error: "Não foi possível criar a conta" });
+      const code = (error as { code?: string })?.code === "23505" ? "EMAIL_EXISTS" : "DATABASE_UNAVAILABLE";
+      res.status(code === "EMAIL_EXISTS" ? 409 : 503).json({ error: code, message: code === "EMAIL_EXISTS" ? "Este e-mail já está cadastrado" : "Servidor indisponível. Tente novamente em alguns segundos." });
     }
   });
 
@@ -286,7 +287,7 @@ export function registerOAuthRoutes(app: Express) {
       const password = typeof req.body?.password === "string" ? req.body.password : "";
       const user = await getUserByEmail(email);
       if (!user?.passwordHash || !verifyPassword(password, user.passwordHash)) {
-        res.status(401).json({ error: "E-mail ou senha inválidos" });
+        res.status(401).json({ error: "INVALID_CREDENTIALS", message: "E-mail ou senha inválidos" });
         return;
       }
       await upsertUser({ openId: user.openId, lastSignedIn: new Date() });
@@ -294,7 +295,7 @@ export function registerOAuthRoutes(app: Express) {
       res.json({ sessionToken, user: buildUserResponse(user) });
     } catch (error) {
       console.error("[Auth] Email login failed", error);
-      res.status(500).json({ error: "Não foi possível realizar o login" });
+      res.status(503).json({ error: "DATABASE_UNAVAILABLE", message: "Servidor indisponível. Tente novamente em alguns segundos." });
     }
   });
 

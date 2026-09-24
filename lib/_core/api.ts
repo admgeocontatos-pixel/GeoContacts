@@ -39,11 +39,18 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
   const url = baseUrl ? `${cleanBaseUrl}${cleanEndpoint}` : endpoint;
   console.log("[API] Full URL:", url);
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20_000);
+  const externalSignal = options.signal;
+  const abortFromCaller = () => controller.abort();
+  externalSignal?.addEventListener("abort", abortFromCaller, { once: true });
+
   try {
     console.log("[API] Making request...");
     const response = await fetch(url, {
       ...options,
       headers,
+      signal: controller.signal,
       credentials: "include",
     });
 
@@ -82,10 +89,16 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
     return (text ? JSON.parse(text) : {}) as T;
   } catch (error) {
     console.error("[API] Request failed:", error);
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Servidor em inicialização ou sem resposta. Tente novamente em alguns segundos.");
+    }
     if (error instanceof Error) {
       throw error;
     }
     throw new Error("Unknown error occurred");
+  } finally {
+    clearTimeout(timeoutId);
+    externalSignal?.removeEventListener("abort", abortFromCaller);
   }
 }
 

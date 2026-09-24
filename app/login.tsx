@@ -21,10 +21,16 @@ export default function LoginScreen() {
 
   if (!loading && isAuthenticated) return <Redirect href="/(tabs)" />;
 
+  const clearStaleSession = async () => {
+    await Auth.removeSessionToken();
+    await Auth.clearUserInfo();
+  };
+
   const submitEmail = async () => {
     setBusy(true);
     setError(null);
     try {
+      await clearStaleSession();
       const result = await Api.apiCall<{ sessionToken: string; user: Auth.User }>(
         mode === 'register' ? '/api/auth/email/register' : '/api/auth/email/login',
         { method: 'POST', body: JSON.stringify({ email: email.trim(), password, name: name.trim() || undefined }) },
@@ -33,7 +39,15 @@ export default function LoginScreen() {
       await Auth.setUserInfo({ ...result.user, lastSignedIn: new Date(result.user.lastSignedIn) });
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível concluir o acesso.');
+      await clearStaleSession();
+      const code = err instanceof Error ? err.message : '';
+      const messages: Record<string, string> = {
+        EMAIL_EXISTS: 'Este e-mail já está cadastrado. Escolha outro ou entre com sua conta.',
+        INVALID_CREDENTIALS: 'E-mail ou senha inválidos.',
+        INVALID_INPUT: 'Informe um e-mail válido e uma senha com pelo menos 8 caracteres.',
+        DATABASE_UNAVAILABLE: 'Servidor em inicialização. Tente novamente em alguns segundos.',
+      };
+      setError(messages[code] ?? (err instanceof Error ? err.message : 'Não foi possível concluir o acesso.'));
     } finally {
       setBusy(false);
     }
@@ -66,7 +80,7 @@ export default function LoginScreen() {
         <Pressable onPress={submitEmail} disabled={busy || oauthBusy} style={{ backgroundColor: colors.background, paddingVertical: 14, borderRadius: 12 }}>
           {busy ? <ActivityIndicator color={colors.foreground} /> : <Text className="text-base font-bold text-foreground text-center">{mode === 'register' ? 'Criar conta' : 'Entrar com e-mail'}</Text>}
         </Pressable>
-        <Pressable onPress={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); }} className="mt-4">
+        <Pressable onPress={() => { void clearStaleSession(); setMode(mode === 'login' ? 'register' : 'login'); setError(null); }} className="mt-4">
           <Text className="text-center text-primary">{mode === 'login' ? 'Ainda não tenho conta' : 'Já tenho uma conta'}</Text>
         </Pressable>
         {error && <Text className="text-sm text-error text-center mt-4">{error}</Text>}
