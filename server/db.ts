@@ -46,6 +46,12 @@ export async function getUserByEmail(email: string) {
   return result[0];
 }
 
+export async function updateUserLastSignedIn(userId: number, lastSignedIn = new Date()) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not configured");
+  await db.update(users).set({ lastSignedIn, updatedAt: new Date() }).where(eq(users.id, userId));
+}
+
 export async function createEmailUser(input: { email: string; name?: string; passwordHash: string }) {
   await upsertUser({ openId: `email:${input.email}`, email: input.email, name: input.name || null, passwordHash: input.passwordHash, loginMethod: "email", lastSignedIn: new Date() });
   return getUserByOpenId(`email:${input.email}`);

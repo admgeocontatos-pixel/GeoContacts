@@ -1,6 +1,6 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "../../shared/const.js";
 import type { Express, Request, Response } from "express";
-import { createEmailUser, getNearbyUsers, getUserByEmail, getUserByOpenId, upsertUser, upsertUserLocation } from "../db";
+import { createEmailUser, getNearbyUsers, getUserByEmail, getUserByOpenId, updateUserLastSignedIn, upsertUser, upsertUserLocation } from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
@@ -290,7 +290,7 @@ export function registerOAuthRoutes(app: Express) {
         res.status(401).json({ error: "INVALID_CREDENTIALS", message: "E-mail ou senha inválidos" });
         return;
       }
-      await upsertUser({ openId: user.openId, lastSignedIn: new Date() });
+      await updateUserLastSignedIn(user.id, new Date());
       const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || "", expiresInMs: ONE_YEAR_MS });
       res.json({ sessionToken, user: buildUserResponse(user) });
     } catch (error) {
