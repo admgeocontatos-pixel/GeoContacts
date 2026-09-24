@@ -57,6 +57,7 @@ export function useAuth(options?: UseAuthOptions) {
       if (!sessionToken) {
         console.log("[useAuth] No session token, setting user to null");
         setUser(null);
+        await Auth.clearUserInfo();
         return;
       }
 
@@ -108,17 +109,20 @@ export function useAuth(options?: UseAuthOptions) {
         console.log("[useAuth] Web: fetching user from API...");
         fetchUser();
       } else {
-        // Native: check for cached user info first for faster initial load
-        Auth.getUserInfo().then((cachedUser) => {
-          console.log("[useAuth] Native cached user check:", cachedUser);
-          if (cachedUser) {
-            console.log("[useAuth] Native: setting cached user immediately");
+        // Native: only use cached user after confirming the token is present.
+        Promise.all([Auth.getSessionToken(), Auth.getUserInfo()]).then(async ([sessionToken, cachedUser]) => {
+          console.log("[useAuth] Native cached user check:", { hasToken: !!sessionToken, hasUser: !!cachedUser });
+          if (sessionToken && cachedUser) {
+            console.log("[useAuth] Native: setting cached user after token confirmation");
             setUser(cachedUser);
             setLoading(false);
           } else {
-            // No cached user, check session token
-            fetchUser();
+            if (!sessionToken) await Auth.clearUserInfo();
+            await fetchUser();
           }
+        }).catch((err) => {
+          console.error("[useAuth] Native session check failed:", err);
+          void fetchUser();
         });
       }
     } else {

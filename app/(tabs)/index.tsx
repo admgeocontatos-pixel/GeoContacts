@@ -6,12 +6,14 @@ import { useLocation } from '@/lib/location-context';
 import { useSettings } from '@/lib/settings-context';
 import { getTranslations } from '@/lib/i18n';
 import { useColors } from '@/hooks/use-colors';
+import { useAuth } from '@/hooks/use-auth';
 import { trpc } from '@/lib/trpc';
 import type { NearbyContact } from '@/shared/types';
 
 export default function HomeScreen() {
   const colors = useColors();
   const { currentLocation, refreshLocation } = useLocation();
+  const { isAuthenticated, loading: authLoading, logout } = useAuth();
   const { settings } = useSettings();
   const t = getTranslations(settings.language);
   const [selectedRadius, setSelectedRadius] = useState(5);
@@ -19,7 +21,7 @@ export default function HomeScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const nearbyQuery = trpc.location.nearby.useQuery(
     { latitude: currentLocation?.latitude ?? 0, longitude: currentLocation?.longitude ?? 0, radiusKm: selectedRadius },
-    { enabled: !!currentLocation, staleTime: 30_000 },
+    { enabled: isAuthenticated && !authLoading && !!currentLocation, staleTime: 30_000 },
   );
 
   const loadNearby = useCallback(async () => {
@@ -36,6 +38,13 @@ export default function HomeScreen() {
     })));
   }, [nearbyQuery.data]);
 
+  useEffect(() => {
+    const message = nearbyQuery.error?.message ?? '';
+    if (/Please login|10001|UNAUTHORIZED/i.test(message)) {
+      void logout();
+    }
+  }, [nearbyQuery.error, logout]);
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try { await loadNearby(); } finally { setIsRefreshing(false); }
@@ -43,7 +52,9 @@ export default function HomeScreen() {
 
   const radiusOptions = [1, 5, 10, 20];
   const isLoading = nearbyQuery.isLoading || nearbyQuery.isFetching;
-  const errorMessage = nearbyQuery.error?.message;
+  const errorMessage = nearbyQuery.error && !/Please login|10001|UNAUTHORIZED/i.test(nearbyQuery.error.message)
+    ? 'Não foi possível consultar usuários próximos. Tente atualizar novamente.'
+    : null;
 
   return (
     <ScreenContainer className="flex-1 bg-background">
