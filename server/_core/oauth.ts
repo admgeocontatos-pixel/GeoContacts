@@ -305,10 +305,18 @@ export function registerOAuthRoutes(app: Express) {
       res.status(400).json({ error: "INVALID_INPUT", message: "Informe um e-mail válido" });
       return;
     }
-    // The MVP does not yet have a transactional e-mail provider. Always return
-    // the same response so the endpoint cannot reveal whether an account exists.
+    if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
+      res.status(503).json({
+        error: "EMAIL_SERVICE_NOT_CONFIGURED",
+        message: "A recuperação por e-mail ainda não está configurada neste servidor. Solicite ao administrador a configuração do provedor de e-mail.",
+      });
+      return;
+    }
+
+    // The provider hook is deliberately explicit: without a reset-token store
+    // and a configured sender, never claim that an e-mail was dispatched.
     console.info("[Auth] Password reset requested", { emailDomain: email.split("@")[1] });
-    res.json({ message: "Se o e-mail estiver cadastrado, você receberá instruções para redefinir a senha." });
+    res.status(501).json({ error: "PASSWORD_RESET_PROVIDER_PENDING", message: "O provedor está configurado, mas o fluxo de redefinição ainda precisa ser ativado." });
   });
 
   // Get current authenticated user - works with both cookie (web) and Bearer token (mobile)
