@@ -40,7 +40,7 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
   console.log("[API] Full URL:", url);
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20_000);
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
   const externalSignal = options.signal;
   const abortFromCaller = () => controller.abort();
   externalSignal?.addEventListener("abort", abortFromCaller, { once: true });

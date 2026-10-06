@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { InsertUser, InsertUserLocation, userLocations, users } from "../drizzle/schema";
@@ -23,7 +23,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!db) throw new Error("Database is not configured");
   const values: InsertUser = { openId: user.openId, lastSignedIn: user.lastSignedIn ?? new Date() };
   const updateSet: Record<string, unknown> = { lastSignedIn: values.lastSignedIn };
-  for (const field of ["name", "email", "passwordHash", "loginMethod", "role"] as const) {
+  for (const field of ["name", "email", "phone", "passwordHash", "loginMethod", "role"] as const) {
     if (user[field] !== undefined) {
       values[field] = user[field] as never;
       updateSet[field] = user[field];
@@ -52,9 +52,20 @@ export async function updateUserLastSignedIn(userId: number, lastSignedIn = new 
   await db.update(users).set({ lastSignedIn, updatedAt: new Date() }).where(eq(users.id, userId));
 }
 
-export async function createEmailUser(input: { email: string; name?: string; passwordHash: string }) {
-  await upsertUser({ openId: `email:${input.email}`, email: input.email, name: input.name || null, passwordHash: input.passwordHash, loginMethod: "email", lastSignedIn: new Date() });
+export async function createEmailUser(input: { email: string; name?: string; phone?: string; passwordHash: string }) {
+  await upsertUser({ openId: `email:${input.email}`, email: input.email, name: input.name || null, phone: input.phone || null, passwordHash: input.passwordHash, loginMethod: "email", lastSignedIn: new Date() });
   return getUserByOpenId(`email:${input.email}`);
+}
+
+export async function findUsersByContactIdentifiers(emails: string[], phones: string[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not configured");
+  const conditions = [];
+  if (emails.length) conditions.push(inArray(users.email, emails));
+  if (phones.length) conditions.push(inArray(users.phone, phones));
+  if (!conditions.length) return [];
+  return db.select({ id: users.id, name: users.name, email: users.email, phone: users.phone, latitude: users.latitude, longitude: users.longitude, lastLocationUpdate: users.lastLocationUpdate })
+    .from(users).where(or(...conditions));
 }
 
 export async function upsertUserLocation(location: InsertUserLocation): Promise<void> {

@@ -62,6 +62,9 @@ async function startServer() {
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });
   });
+  app.get("/api/ping", (_req, res) => {
+    res.json({ ok: true, service: "geocontacts", timestamp: Date.now() });
+  });
 
   app.use(
     "/api/trpc",
@@ -80,6 +83,10 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`[api] server listening on port ${port}`);
+    const keepAlive = setInterval(() => {
+      void fetch(`http://127.0.0.1:${port}/api/ping`).catch(() => undefined);
+    }, 10 * 60 * 1000);
+    keepAlive.unref?.();
   });
 }
 

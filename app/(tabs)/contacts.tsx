@@ -1,141 +1,48 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
 import * as Contacts from 'expo-contacts';
+import { router } from 'expo-router';
 import { ScreenContainer } from '@/components/screen-container';
 import { useSettings } from '@/lib/settings-context';
 import { getTranslations } from '@/lib/i18n';
 import { useColors } from '@/hooks/use-colors';
+import { apiCall } from '@/lib/_core/api';
 import type { Contact as AppContact } from '@/shared/types';
 
-function normalizeContact(contact: Contacts.ExistingContact): AppContact {
-  return {
-    id: contact.id ?? `${contact.name}-${contact.phoneNumbers?.[0]?.number ?? ''}`,
-    userId: '',
-    name: contact.name || 'Contato sem nome',
-    phone: contact.phoneNumbers?.[0]?.number,
-    email: contact.emails?.[0]?.email,
-    avatar: contact.image?.uri,
-    isFavorite: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-}
+type MatchedUser = { id: number; name: string | null; email: string | null; phone: string | null; latitude: number | null; longitude: number | null; lastLocationUpdate: string | null };
+
+function normalizePhone(value?: string | null) { return (value ?? '').replace(/[^0-9+]/g, ''); }
+function normalizeContact(contact: Contacts.ExistingContact): AppContact { return { id: contact.id ?? `${contact.name}-${contact.phoneNumbers?.[0]?.number ?? ''}`, userId: '', name: contact.name || 'Contato sem nome', phone: contact.phoneNumbers?.[0]?.number, email: contact.emails?.[0]?.email, avatar: contact.image?.uri, isFavorite: false, createdAt: new Date(), updatedAt: new Date() }; }
 
 export default function ContactsScreen() {
-  const colors = useColors();
-  const { settings } = useSettings();
-  const t = getTranslations(settings.language);
-  const [contacts, setContacts] = useState<AppContact[]>([]);
-  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
-  const [permission, setPermission] = useState<Contacts.PermissionStatus | null>(null);
+  const colors = useColors(); const { settings } = useSettings(); const t = getTranslations(settings.language);
+  const [contacts, setContacts] = useState<AppContact[]>([]); const [matched, setMatched] = useState<MatchedUser[]>([]); const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(true); const [permission, setPermission] = useState<Contacts.PermissionStatus | null>(null); const [matchError, setMatchError] = useState<string | null>(null);
 
   const loadContacts = useCallback(async () => {
-    setIsLoading(true);
+    setIsLoading(true); setMatchError(null);
     try {
       const current = await Contacts.getPermissionsAsync();
-      const granted = current.status === Contacts.PermissionStatus.GRANTED
-        ? current
-        : await Contacts.requestPermissionsAsync();
+      const granted = current.status === Contacts.PermissionStatus.GRANTED ? current : await Contacts.requestPermissionsAsync();
       setPermission(granted.status);
-      if (granted.status !== Contacts.PermissionStatus.GRANTED) {
-        setContacts([]);
-        return;
-      }
-      const result = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails, Contacts.Fields.Image],
-        sort: Contacts.SortTypes.FirstName,
-      });
-      setContacts(result.data.map(normalizeContact));
-    } catch (error) {
-      console.error('[Contacts] Failed to load contacts:', error);
-      Alert.alert('Contatos', 'Não foi possível acessar a agenda do celular.');
-    } finally {
-      setIsLoading(false);
-    }
+      if (granted.status !== Contacts.PermissionStatus.GRANTED) { setContacts([]); setMatched([]); return; }
+      const result = await Contacts.getContactsAsync({ fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails, Contacts.Fields.Image], sort: Contacts.SortTypes.FirstName });
+      const loaded = result.data.map(normalizeContact); setContacts(loaded);
+      const match = await apiCall<{ users: MatchedUser[] }>('/api/contacts/match', { method: 'POST', body: JSON.stringify({ emails: loaded.map((c) => c.email).filter(Boolean), phones: loaded.map((c) => normalizePhone(c.phone)).filter(Boolean) }) });
+      setMatched(match.users);
+    } catch (error) { console.error('[Contacts] Failed:', error); setMatchError(error instanceof Error ? error.message : 'Não foi possível cruzar os contatos.'); }
+    finally { setIsLoading(false); }
   }, []);
-
   useEffect(() => { void loadContacts(); }, [loadContacts]);
 
-  const filteredContacts = useMemo(() => contacts.filter((contact) => {
-    const query = searchQuery.toLowerCase();
-    return contact.name.toLowerCase().includes(query) || contact.email?.toLowerCase().includes(query) || contact.phone?.includes(searchQuery);
-  }), [contacts, searchQuery]);
+  const filtered = useMemo(() => contacts.filter((c) => { const q = searchQuery.toLowerCase(); return c.name.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q) || c.phone?.includes(searchQuery); }), [contacts, searchQuery]);
+  const registered = useMemo(() => filtered.filter((contact) => matched.some((user) => (contact.email && user.email?.toLowerCase() === contact.email.toLowerCase()) || (contact.phone && normalizePhone(user.phone) === normalizePhone(contact.phone)))), [filtered, matched]);
+  const invited = useMemo(() => filtered.filter((contact) => !registered.some((item) => item.id === contact.id)), [filtered, registered]);
+  const findMatch = (contact: AppContact) => matched.find((user) => (contact.email && user.email?.toLowerCase() === contact.email.toLowerCase()) || (contact.phone && normalizePhone(user.phone) === normalizePhone(contact.phone)));
 
-  const toggleContact = (id: string) => {
-    setSelectedContacts((previous) => {
-      const next = new Set(previous);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
+  const invite = async (contact: AppContact) => { await Share.share({ title: 'Convite GeoContacts', message: `Olá ${contact.name}, encontre seus contatos próximos no GeoContacts: https://geocontacts-dn1j.onrender.com` }); };
+  const registeredSection = registered.map((contact) => { const user = findMatch(contact); return <View key={contact.id} style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 8 }}><Text className="text-base font-semibold text-foreground">{contact.name}</Text><Text className="text-xs text-muted mt-1">{contact.email || contact.phone}</Text><Pressable onPress={() => router.push('/(tabs)')} style={{ backgroundColor: colors.primary, borderRadius: 8, paddingVertical: 9, marginTop: 10 }}><Text className="text-center text-background font-semibold">Ver no mapa{user?.latitude ? ` · ${user.latitude.toFixed(3)}, ${user.longitude?.toFixed(3)}` : ''}</Text></Pressable></View>; });
+  const inviteSection = invited.map((contact) => <View key={contact.id} style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 8 }}><Text className="text-base font-semibold text-foreground">{contact.name}</Text><Text className="text-xs text-muted mt-1">{contact.email || contact.phone || 'Sem telefone ou e-mail'}</Text><Pressable onPress={() => void invite(contact)} style={{ borderColor: colors.primary, borderWidth: 1, borderRadius: 8, paddingVertical: 9, marginTop: 10 }}><Text className="text-center text-primary font-semibold">Enviar convite por SMS/WhatsApp</Text></Pressable></View>);
 
-  const selectAll = () => setSelectedContacts((previous) => previous.size === filteredContacts.length ? new Set() : new Set(filteredContacts.map((contact) => contact.id)));
-
-  const syncSelected = async () => {
-    if (!selectedContacts.size) {
-      Alert.alert('Sincronização', 'Selecione pelo menos um contato.');
-      return;
-    }
-    setIsSyncing(true);
-    setSyncStatus('syncing');
-    try {
-      // O envio para a API será conectado quando as tabelas de contatos forem ativadas no backend.
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      setSyncStatus('success');
-      setSelectedContacts(new Set());
-    } catch {
-      setSyncStatus('error');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const renderContact = ({ item }: { item: AppContact }) => {
-    const selected = selectedContacts.has(item.id);
-    return (
-      <Pressable onPress={() => toggleContact(item.id)} style={{ backgroundColor: selected ? `${colors.primary}20` : colors.surface, borderColor: selected ? colors.primary : colors.border, borderWidth: 1, borderRadius: 12, padding: 12, marginVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <View style={{ width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
-          {selected && <Text style={{ color: colors.background, fontWeight: '700' }}>✓</Text>}
-        </View>
-        <View className="flex-1">
-          <Text className="text-base font-semibold text-foreground">{item.name}</Text>
-          {!!item.email && <Text className="text-xs text-muted mt-1">{item.email}</Text>}
-          {!!item.phone && <Text className="text-xs text-muted">{item.phone}</Text>}
-        </View>
-      </Pressable>
-    );
-  };
-
-  return (
-    <ScreenContainer className="flex-1">
-      <FlatList
-        data={filteredContacts}
-        keyExtractor={(item) => item.id}
-        renderItem={renderContact}
-        refreshing={isLoading}
-        onRefresh={loadContacts}
-        ListHeaderComponent={<View className="px-4 py-4">
-          <Text className="text-3xl font-bold text-foreground mb-4">{t.syncContacts}</Text>
-          <View className="flex-row items-center px-3 py-2 rounded-lg mb-4" style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }}>
-            <Text className="text-lg mr-2">🔍</Text>
-            <TextInput placeholder={t.search} placeholderTextColor={colors.muted} value={searchQuery} onChangeText={setSearchQuery} className="flex-1 text-foreground" style={{ color: colors.foreground }} />
-          </View>
-          {permission !== Contacts.PermissionStatus.GRANTED && !isLoading && <Text className="text-sm text-warning mb-3">Permita o acesso aos contatos para carregar a agenda do celular.</Text>}
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-sm font-semibold text-muted">{selectedContacts.size} de {filteredContacts.length} selecionados</Text>
-            <Pressable onPress={selectAll} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: colors.primary }}><Text className="text-xs font-semibold text-background">{selectedContacts.size === filteredContacts.length ? 'Desselecionar' : 'Selecionar tudo'}</Text></Pressable>
-          </View>
-          {syncStatus !== 'idle' && <Text className="text-sm font-semibold text-foreground mb-3">{syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'success' ? 'Contatos selecionados prontos para sincronização.' : t.error}</Text>}
-          <Text className="text-sm font-semibold text-muted mb-3">{contacts.length} contatos encontrados no celular</Text>
-        </View>}
-        ListEmptyComponent={<View className="items-center justify-center py-12 px-4">{isLoading ? <ActivityIndicator color={colors.primary} /> : <><Text className="text-4xl mb-3">📭</Text><Text className="text-lg font-semibold text-foreground mb-2">Nenhum contato encontrado</Text><Text className="text-sm text-muted text-center">Verifique a permissão de contatos e tente novamente.</Text></>}</View>}
-        showsVerticalScrollIndicator={false}
-      />
-      {selectedContacts.size > 0 && <View className="px-4 py-4 border-t" style={{ borderTopColor: colors.border }}><Pressable onPress={syncSelected} disabled={isSyncing} style={{ backgroundColor: isSyncing ? colors.muted : colors.primary, paddingVertical: 14, borderRadius: 12 }}><Text className="text-base font-bold text-background text-center">{isSyncing ? 'Sincronizando...' : `Sincronizar (${selectedContacts.size})`}</Text></Pressable></View>}
-    </ScreenContainer>
-  );
+  return <ScreenContainer className="flex-1"><ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={undefined}><Text className="text-3xl font-bold text-foreground mb-4">{t.syncContacts}</Text><TextInput placeholder={t.search} placeholderTextColor={colors.muted} value={searchQuery} onChangeText={setSearchQuery} className="border border-border rounded-xl px-4 py-3 mb-4 text-foreground" style={{ color: colors.foreground }} />{permission !== Contacts.PermissionStatus.GRANTED && !isLoading && <Text className="text-sm text-warning mb-3">Permita o acesso aos contatos para carregar a agenda do celular.</Text>}{isLoading ? <ActivityIndicator color={colors.primary} /> : <><Text className="text-sm text-muted mb-5">{contacts.length} contatos reais carregados do telefone.</Text>{matchError && <Text className="text-sm text-warning mb-4">Agenda carregada, mas o cruzamento ainda não foi possível: {matchError}</Text>}<Text className="text-xl font-bold text-foreground mb-3">Usuários no GeoContacts ({registered.length})</Text>{registeredSection.length ? registeredSection : <Text className="text-sm text-muted mb-6">Nenhum contato da agenda está cadastrado.</Text>}<Text className="text-xl font-bold text-foreground mt-4 mb-3">Convidar para o GeoContacts ({invited.length})</Text>{inviteSection.length ? inviteSection : <Text className="text-sm text-muted">Nenhum convite pendente.</Text>}<Pressable onPress={() => void loadContacts()} style={{ backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 14, marginTop: 20 }}><Text className="text-center text-background font-bold">Atualizar agenda</Text></Pressable></>}</ScrollView></ScreenContainer>;
 }

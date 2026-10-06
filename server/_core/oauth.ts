@@ -1,6 +1,6 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "../../shared/const.js";
 import type { Express, Request, Response } from "express";
-import { createEmailUser, getNearbyUsers, getUserByEmail, getUserByOpenId, updateUserLastSignedIn, upsertUser, upsertUserLocation } from "../db";
+import { createEmailUser, findUsersByContactIdentifiers, getNearbyUsers, getUserByEmail, getUserByOpenId, updateUserLastSignedIn, upsertUser, upsertUserLocation } from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
@@ -57,6 +57,7 @@ function buildUserResponse(
     openId: user?.openId ?? null,
     name: user?.name ?? null,
     email: user?.email ?? null,
+    phone: (user as any)?.phone ?? null,
     loginMethod: user?.loginMethod ?? null,
     lastSignedIn: (user?.lastSignedIn ?? new Date()).toISOString(),
   };
@@ -115,6 +116,23 @@ export function registerOAuthRoutes(app: Express) {
     } catch (error) {
       console.error("[Location] Nearby lookup failed", error);
       res.status(401).json({ error: "Não foi possível consultar contatos próximos" });
+    }
+  });
+
+  app.post("/api/contacts/match", async (req: Request, res: Response) => {
+    try {
+      await sdk.authenticateRequest(req);
+      const emails = Array.isArray(req.body?.emails)
+        ? req.body.emails.filter((value: unknown): value is string => typeof value === "string").map((value: string) => value.trim().toLowerCase()).filter(Boolean).slice(0, 1000)
+        : [];
+      const phones = Array.isArray(req.body?.phones)
+        ? req.body.phones.filter((value: unknown): value is string => typeof value === "string").map((value: string) => value.replace(/[^0-9+]/g, "")).filter(Boolean).slice(0, 1000)
+        : [];
+      const users = await findUsersByContactIdentifiers(emails, phones);
+      res.json({ users });
+    } catch (error) {
+      console.error("[Contacts] Match failed", error);
+      res.status(401).json({ error: "Não foi possível cruzar os contatos" });
     }
   });
 
@@ -262,6 +280,7 @@ export function registerOAuthRoutes(app: Express) {
       const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
       const password = typeof req.body?.password === "string" ? req.body.password : "";
       const name = typeof req.body?.name === "string" ? req.body.name.trim() : undefined;
+      const phone = typeof req.body?.phone === "string" ? req.body.phone.replace(/[^0-9+]/g, "") : undefined;
       if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 8) {
         res.status(400).json({ error: "INVALID_INPUT", message: "Informe um e-mail válido e uma senha com pelo menos 8 caracteres" });
         return;
@@ -270,7 +289,7 @@ export function registerOAuthRoutes(app: Express) {
         res.status(409).json({ error: "EMAIL_EXISTS", message: "Este e-mail já está cadastrado" });
         return;
       }
-      const user = await createEmailUser({ email, name, passwordHash: hashPassword(password) });
+      const user = await createEmailUser({ email, name, phone, passwordHash: hashPassword(password) });
       if (!user) throw new Error("User was not created");
       const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || "", expiresInMs: ONE_YEAR_MS });
       res.json({ sessionToken, user: buildUserResponse(user) });
