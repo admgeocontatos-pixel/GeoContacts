@@ -95,6 +95,6 @@ export async function getNearbyUsers(userId: number, latitude: number, longitude
   const distance = sql<number>`6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(${userLocations.latitude} - ${latitude}) / 2), 2) + COS(RADIANS(${latitude})) * COS(RADIANS(${userLocations.latitude})) * POWER(SIN(RADIANS(${userLocations.longitude} - ${longitude}) / 2), 2)))`;
   return db.select({ id: users.id, name: users.name, email: users.email, latitude: userLocations.latitude, longitude: userLocations.longitude, distance: distance.as("distance"), lastSeen: userLocations.updatedAt })
     .from(userLocations).innerJoin(users, eq(users.id, userLocations.userId))
-    .where(sql`${userLocations.userId} <> ${userId} AND ${userLocations.updatedAt} >= NOW() - INTERVAL '15 minutes'`)
-    .having(sql`${distance} <= ${radiusKm}`).orderBy(distance).limit(100);
+    .where(sql`${userLocations.userId} <> ${userId} AND ${userLocations.updatedAt} >= NOW() - INTERVAL '15 minutes' AND ${distance} <= ${radiusKm}`)
+    .orderBy(distance).limit(100);
 }
