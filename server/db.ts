@@ -29,6 +29,12 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet[field] = user[field];
     }
   }
+  // Session refreshes only provide openId/lastSignedIn. Inserting that partial
+  // record would violate users.email NOT NULL before ON CONFLICT can update it.
+  if (Object.keys(updateSet).length === 1) {
+    await db.update(users).set({ lastSignedIn: values.lastSignedIn, updatedAt: new Date() }).where(eq(users.openId, user.openId));
+    return;
+  }
   await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
 }
 
