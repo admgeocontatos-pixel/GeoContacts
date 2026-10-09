@@ -27,3 +27,5 @@ CREATE TABLE IF NOT EXISTS user_locations (
   accuracy double precision,
   "updatedAt" timestamp NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS user_locations_user_id_unique ON public.user_locations ("userId");

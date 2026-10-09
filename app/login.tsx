@@ -7,6 +7,9 @@ import { startOAuthLogin } from '@/constants/oauth';
 import { useColors } from '@/hooks/use-colors';
 import * as Auth from '@/lib/_core/auth';
 import * as Api from '@/lib/_core/api';
+import * as Contacts from 'expo-contacts';
+import * as Location from 'expo-location';
+import { Platform } from 'react-native';
 
 export default function LoginScreen() {
   const colors = useColors();
@@ -38,6 +41,7 @@ export default function LoginScreen() {
         { method: 'POST', body: JSON.stringify({ email: email.trim(), password, name: name.trim() || undefined }) },
       );
       await signIn(result.sessionToken, { ...result.user, lastSignedIn: new Date(result.user.lastSignedIn) });
+      await requestDevicePermissions();
     } catch (err) {
       await clearStaleSession();
       const code = err instanceof Error ? err.message : '';
@@ -46,6 +50,8 @@ export default function LoginScreen() {
         INVALID_CREDENTIALS: 'E-mail ou senha inválidos.',
         INVALID_INPUT: 'Informe um e-mail válido e uma senha com pelo menos 8 caracteres.',
         DATABASE_UNAVAILABLE: 'Servidor em inicialização. Tente novamente em alguns segundos.',
+        EMAIL_SERVICE_NOT_CONFIGURED: 'A recuperação por e-mail está desativada na versão de testes. Poderá continuar a utilizar o login normal.',
+        PASSWORD_RESET_PROVIDER_PENDING: 'A recuperação por e-mail está temporariamente indisponível na versão de testes.',
         SESSION_PERSISTENCE_FAILED: 'Não foi possível salvar a sessão. Tente novamente.',
         SESSION_TOKEN_PERSISTENCE_FAILED: 'Não foi possível salvar a sessão. Tente novamente.',
         USER_INFO_PERSISTENCE_FAILED: 'Não foi possível salvar a sessão. Tente novamente.',
@@ -53,6 +59,18 @@ export default function LoginScreen() {
       setError(messages[code] ?? (err instanceof Error ? err.message : 'Não foi possível concluir o acesso.'));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const requestDevicePermissions = async () => {
+    if (Platform.OS === 'web') return;
+    try {
+      await Promise.all([
+        Contacts.requestPermissionsAsync(),
+        Location.requestForegroundPermissionsAsync(),
+      ]);
+    } catch (permissionError) {
+      console.warn('[Permissions] Could not request contacts/location permissions:', permissionError);
     }
   };
 

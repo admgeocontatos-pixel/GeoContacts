@@ -359,11 +359,11 @@ export function registerOAuthRoutes(app: Express) {
 
       // Get the token from the Authorization header to set as cookie
       const authHeader = req.headers.authorization || req.headers.Authorization;
-      if (typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
+      if (typeof authHeader !== "string" || !/^Bearer\s+/i.test(authHeader)) {
         res.status(400).json({ error: "Bearer token required" });
         return;
       }
-      const token = authHeader.slice("Bearer ".length).trim();
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
 
       // Set cookie for this domain (3000-xxx)
       const cookieOptions = getSessionCookieOptions(req);

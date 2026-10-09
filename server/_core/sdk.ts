@@ -193,7 +193,7 @@ class SDKServer {
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
 
-      if (!isNonEmptyString(openId) || !isNonEmptyString(appId) || !isNonEmptyString(name)) {
+      if (!isNonEmptyString(openId) || !isNonEmptyString(appId)) {
         console.warn("[Auth] Session payload missing required fields");
         return null;
       }
@@ -201,7 +201,7 @@ class SDKServer {
       return {
         openId,
         appId,
-        name,
+        name: typeof name === "string" ? name : "",
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -235,8 +235,9 @@ class SDKServer {
     // Regular authentication flow
     const authHeader = req.headers.authorization || req.headers.Authorization;
     let token: string | undefined;
-    if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
-      token = authHeader.slice("Bearer ".length).trim();
+    if (typeof authHeader === "string") {
+      const match = authHeader.match(/^Bearer\s+(.+)$/i);
+      if (match) token = match[1].trim();
     }
 
     const cookies = this.parseCookies(req.headers.cookie);
