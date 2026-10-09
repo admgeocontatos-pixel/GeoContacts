@@ -135,6 +135,18 @@ class SDKServer {
     return new Map(Object.entries(parsed));
   }
 
+  private getAuthorizationHeader(req: Request): string | undefined {
+    const fromExpress = req.get("authorization");
+    if (fromExpress) return fromExpress;
+    const fromHeaders = req.headers.authorization;
+    if (typeof fromHeaders === "string") return fromHeaders;
+    const rawHeaders = req.rawHeaders ?? [];
+    for (let index = 0; index < rawHeaders.length - 1; index += 2) {
+      if (rawHeaders[index].toLowerCase() === "authorization") return rawHeaders[index + 1];
+    }
+    return undefined;
+  }
+
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
     return new TextEncoder().encode(secret);
@@ -233,7 +245,7 @@ class SDKServer {
 
   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
     // Regular authentication flow
-    const authHeader = req.headers.authorization || req.headers.Authorization;
+    const authHeader = this.getAuthorizationHeader(req);
     let token: string | undefined;
     if (typeof authHeader === "string") {
       const match = authHeader.match(/^Bearer\s+(.+)$/i);
